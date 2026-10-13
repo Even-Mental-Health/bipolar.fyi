@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bipolar.fyi</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 16px; }
+  label { display: block; margin-top: 16px; font-weight: 600; }
+  input, select, textarea { width: 100%; padding: 8px; font: inherit; box-sizing: border-box; }
+  textarea { height: 90px; }
+  button { margin-top: 24px; padding: 12px 20px; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Bipolar.fyi</h1>
+<p>Welcome! Use this tool to generate a How to Help guide for your supporters. Your data never leaves this browser.</p>
+
+<form id="f">
+  <label>Name <input name="name"></label>
+  <label>Diagnosis
+    <select name="diagnosis"><option>Bipolar 1</option><option>Bipolar 2</option><option>Bipolar Other</option></select>
+  </label>
+  <label>What are the signs that you are becoming depressed? <textarea name="depSigns"></textarea></label>
+  <label>How can others help you when you are depressed? <textarea name="depHelp"></textarea></label>
+  <label>What are the signs that you are becoming manic? <textarea name="manSigns"></textarea></label>
+  <label>How can others help you when you are manic? <textarea name="manHelp"></textarea></label>
+  <label>Additional notes for your supporters <textarea name="notes"></textarea></label>
+  <button>Generate PDF</button>
+  <button type="button" id="clear">Clear my answers</button>
+</form>
+<p><small>Your answers are saved in this browser so you can come back later. Use "Clear my answers" on a shared computer.</small></p>
+
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+<script>
+// Save answers in this browser only
+const form = document.getElementById('f'), KEY = 'bipolar-fyi';
+try { const saved = JSON.parse(localStorage.getItem(KEY)) || {}; for (const k in saved) if (form[k]) form[k].value = saved[k]; } catch {}
+form.oninput = () => { try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(new FormData(form)))); } catch {} };
+document.getElementById('clear').onclick = () => { form.reset(); try { localStorage.removeItem(KEY); } catch {} };
+</script>
+<script>
+const SECTIONS = [
+  ["When I'm becoming depressed", [['Signs to watch for', 'depSigns'], ['How you can help', 'depHelp']]],
+  ["When I'm becoming manic", [['Signs to watch for', 'manSigns'], ['How you can help', 'manHelp']]],
+  ['Additional notes', [['', 'notes']]]
+];
+const ACCENT = [44, 82, 130], INK = [33, 37, 41], MUTED = [110, 117, 125];
+
+document.getElementById('f').onsubmit = e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target));
+  const pdf = new jspdf.jsPDF({ format: 'letter' });
+  const M = 20, W = pdf.internal.pageSize.getWidth() - 2 * M, H = pdf.internal.pageSize.getHeight();
+  let y;
+  const room = h => { if (y + h > H - 22) { pdf.addPage(); y = 22; } };
+  const style = (size, bold, color) => pdf.setFont('helvetica', bold ? 'bold' : 'normal').setFontSize(size).setTextColor(...color);
+
+  // Header band
+  pdf.setFillColor(...ACCENT).rect(0, 0, pdf.internal.pageSize.getWidth(), 38, 'F');
+  style(22, true, [255, 255, 255]).text('How to Help ' + (d.name.trim() || 'Me'), M, 20);
+  style(11, false, [220, 228, 240]).text(d.diagnosis + '  ·  ' + new Date().toLocaleDateString(undefined, { dateStyle: 'long' }), M, 29);
+  y = 52;
+
+  for (const [title, fields] of SECTIONS) {
+    const filled = fields.filter(([, k]) => d[k].trim());
+    if (!filled.length) continue;
+    room(30);
+    style(15, true, ACCENT).text(title, M, y);
+    pdf.setDrawColor(...ACCENT).setLineWidth(0.4).line(M, y + 2.5, M + W, y + 2.5);
+    y += 11;
+    for (const [label, key] of filled) {
+      if (label) { room(14); style(10, true, MUTED).text(label.toUpperCase(), M, y); y += 6; }
+      const lines = d[key].split('\n').map(s => s.trim()).filter(Boolean);
+      const bullets = lines.length > 1;
+      style(11.5, false, INK);
+      for (const line of lines) {
+        const wrapped = pdf.splitTextToSize(line, bullets ? W - 6 : W);
+        wrapped.forEach((t, i) => {
+          room(6);
+          if (bullets && i === 0) pdf.text('•', M + 1, y);
+          pdf.text(t, bullets ? M + 6 : M, y);
+          y += 5.8;
+        });
+        y += bullets ? 1.5 : 0;
+      }
+      y += 6;
+    }
+    y += 4;
+  }
+
+  // Footer on every page
+  const n = pdf.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    pdf.setPage(i);
+    style(9, false, MUTED);
+    pdf.text('Made with Bipolar.fyi', M, H - 10);
+    pdf.text(`Page ${i} of ${n}`, M + W, H - 10, { align: 'right' });
+  }
+  pdf.save('how-to-help' + (d.name.trim() ? '-' + d.name.trim().replace(/\s+/g, '-').toLowerCase() : '') + '.pdf');
+};
+</script>
+</body>
+</html>
